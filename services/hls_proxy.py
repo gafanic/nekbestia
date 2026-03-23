@@ -330,20 +330,17 @@ class HLSProxy:
         Try direct first, then promote the client/channel pair to FFmpeg when we
         observe rapid manifest re-open attempts that usually indicate playback
         never stabilized on the direct stream.
+        
+        ✅ DISABLED: Auto fallback is now disabled because the direct proxy 
+        correctly strips the 16-byte MD5 wrapper from DLHD segments, making
+        the FFmpeg transcoding layer unnecessary. Only explicit use_ffmpeg=1 
+        will activate it.
         """
         mode = request.query.get("use_ffmpeg", "auto").strip().lower()
         if mode in {"1", "true", "force", "ffmpeg"}:
             return True
-        if mode in {"0", "false", "off", "direct"}:
-            return False
-
-        if (
-            not self.ffmpeg_manager
-            or not request.path.endswith("manifest.m3u8")
-            or not DLHDExtractor
-            or not isinstance(extractor, DLHDExtractor)
-        ):
-            return False
+        # Auto mode and "off" both return False now
+        return False
 
         now = time.time()
         state_key = self._get_dlhd_compat_state_key(request, target_url)
@@ -1961,15 +1958,31 @@ class HLSProxy:
                     "Range, Content-Type",
                 )
 
+                # ✅ NUOVO: Rilevamento dinamico della firma DLHD (MD5 del channel key)
+                # Leggiamo i primi 16 byte PRIMA di preparare la risposta per poter correggere gli headers
+                first_16 = await resp.content.read(16)
+                
+                chan_key = headers.get("X-Channel-Key") or headers.get("x-channel-key")
+                expected_sig = hashlib.md5(chan_key.encode()).digest() if chan_key else b""
+                
+                is_dlhd_wrapped = chan_key and first_16 == expected_sig
+                if is_dlhd_wrapped:
+                    logger.info(f"✂️ Dynamic signature match! Stripping 16-byte wrapper from {segment_url}")
+                    response_headers.pop("content-length", None)
+                    response_headers.pop("Content-Length", None)
+
                 response = web.StreamResponse(
                     status=resp.status, headers=response_headers
                 )
 
                 await response.prepare(request)
 
+                # Se non era un wrapper, scriviamo i 16 byte letti prima
+                if not is_dlhd_wrapped:
+                    await response.write(first_16)
+
                 async for chunk in resp.content.iter_chunked(8192):
                     await response.write(chunk)
-
                 await response.write_eof()
                 return response
 
@@ -2297,15 +2310,28 @@ class HLSProxy:
                     "Range, Content-Type",
                 )
 
+                # ✅ Firma dinamica DLHD
+                first_16 = await resp.content.read(16)
+                chan_key = headers.get("X-Channel-Key") or headers.get("x-channel-key")
+                expected_sig = hashlib.md5(chan_key.encode()).digest() if chan_key else b""
+                
+                is_dlhd_wrapped = chan_key and first_16 == expected_sig
+                if is_dlhd_wrapped:
+                    logger.info(f"✂️ Stripping dynamic 16-byte wrapper from {stream_url}")
+                    response_headers.pop("content-length", None)
+                    response_headers.pop("Content-Length", None)
+
                 response = web.StreamResponse(
                     status=resp.status, headers=response_headers
                 )
 
                 await response.prepare(request)
 
+                if not is_dlhd_wrapped:
+                    await response.write(first_16)
+
                 async for chunk in resp.content.iter_chunked(8192):
                     await response.write(chunk)
-
                 await response.write_eof()
                 return response
 
