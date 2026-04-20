@@ -547,17 +547,26 @@ class HLSProxy:
 
             if is_problematic:
                 if domain not in BYPASSED_WARP_DOMAINS:
-                    logging.info(f"⚡ [Dynamic Bypass] Adding {domain} to WARP exclusion list...")
-                    # Add to WARP bypass (works in TUN mode)
-                    os.system(f"warp-cli --accept-tos tunnel host add {domain} > /dev/null 2>&1")
-                    BYPASSED_WARP_DOMAINS.add(domain)
-                    # Also add base domain to global registry
+                    # Always bypass base domain for these providers
                     base_domain = ".".join(domain.split(".")[-2:])
+                    logging.info(f"⚡ [Dynamic Bypass] Adding {base_domain} (and {domain}) to WARP exclusion list...")
+                    
+                    os.system(f"warp-cli --accept-tos tunnel host add {base_domain} > /dev/null 2>&1")
+                    os.system(f"warp-cli --accept-tos tunnel host add {domain} > /dev/null 2>&1")
+                    
+                    BYPASSED_WARP_DOMAINS.add(domain)
                     BYPASSED_WARP_DOMAINS.add(base_domain)
+                    time.sleep(1.0)
         except Exception as e:
             logging.error(f"❌ Error in dynamic WARP bypass: {e}")
 
     async def _get_proxy_session(self, url: str):
+        """Get a session with proxy support for the given URL."""
+        self._check_dynamic_warp_bypass(url)
+        
+        # Debug: Check current egress IP for this domain (optional, slow if enabled)
+        # if any(p in url for p in ["vavoo", "mediahub"]):
+        #    logger.info(f"🔍 Requesting {url} via {'DIRECT' if any(d in url for d in BYPASSED_WARP_DOMAINS) else 'WARP'}")
         """Get a session with proxy support for the given URL.
 
         Sessions are cached and reused for the same proxy to improve performance.
@@ -2293,8 +2302,9 @@ class HLSProxy:
                 )
             else:
                 session, session_proxy = await self._get_proxy_session(stream_url)
+                routing = "BYPASS (Real IP)" if any(d in stream_url for d in BYPASSED_WARP_DOMAINS) else "WARP (Cloudflare IP)"
                 logger.info(
-                    f"📡 [Proxy Stream] Using session{f' via proxy {session_proxy}' if session_proxy else ' (direct)'} for: {stream_url}"
+                    f"📡 [Proxy Stream] {routing} - Using session{f' via proxy {session_proxy}' if session_proxy else ' (direct)'} for: {stream_url}"
                 )
             # ✅ TLS FINGERPRINT BYPASS: Use curl_cffi for problematic CDNs (CinemaCity)
             use_curl_cffi = HAS_CURL_CFFI and any(d in stream_url for d in ["cccdn.net", "cinemacity.cc"])
@@ -2349,8 +2359,9 @@ class HLSProxy:
                     if is_dood_416:
                         logger.debug(f"ℹ️ DoodStream 416 (benign/range-end): {stream_url}")
                     else:
+                        routing = "BYPASS (Real IP)" if any(d in stream_url for d in BYPASSED_WARP_DOMAINS) else "WARP (Cloudflare IP)"
                         logger.warning(
-                            f"⚠️ Upstream returned error {resp.status} for {stream_url}"
+                            f"⚠️ Upstream returned error {resp.status} for {stream_url} [Routing: {routing}]"
                         )
                     return web.Response(
                         body=error_body,

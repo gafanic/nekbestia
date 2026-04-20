@@ -240,9 +240,9 @@ class VavooExtractor:
             if resolved_url:
                 logger.info(f"Resolved via mediahubmx: {resolved_url[:80]}...")
                 stream_headers = {
-                    "user-agent": "MediaHubMX/2",
-                    "referer": "https://vavoo.to/",
-                    "origin": "https://vavoo.to",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Referer": "https://vavoo.to",
+                    "Origin": "https://vavoo.to",
                 }
 
         # Step 2: Fallback — TS signature via ping2
