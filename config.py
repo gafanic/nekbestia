@@ -149,7 +149,30 @@ def get_ssl_setting_for_url(url: str, transport_routes: list) -> bool:
 ENABLE_WARP = os.environ.get("ENABLE_WARP", "false").lower() == "true"
 WARP_PROXY_URL = "socks5h://127.0.0.1:1080"
 # Domini da escludere da WARP (bypass diretto tramite IP reale del VPS)
-WARP_EXCLUDE_DOMAINS = ["cinemacity.cc", "cccdn.net", "vavoo", "lokke.app", "mediahubmx", "strem.fun", "real-debrid.com"]
+WARP_EXCLUDE_DOMAINS = [
+    "cinemacity.cc",
+    "cccdn.net",
+    "vavoo",
+    "lokke.app",
+    "mediahubmx",
+    "strem.fun",
+    "real-debrid.com",
+    "realdebrid.com",
+    "api.real-debrid.com",
+    "premiumize.me",
+    "www.premiumize.me",
+    "alldebrid.com",
+    "api.alldebrid.com",
+    "debrid-link.com",
+    "debridlink.com",
+    "api.debrid-link.com",
+    "torbox.app",
+    "api.torbox.app",
+    "offcloud.com",
+    "api.offcloud.com",
+    "put.io",
+    "api.put.io",
+]
 
 # Configurazione proxy
 GLOBAL_PROXIES = parse_proxies('GLOBAL_PROXY')
