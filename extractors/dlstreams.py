@@ -541,6 +541,7 @@ class DLStreamsExtractor:
                     "request_headers": playback_headers,
                     "mediaflow_endpoint": self.mediaflow_endpoint,
                     "captured_manifest": cached_item[0],
+                    "bypass_warp": True
                 }
 
             # 2. PROACTIVE BACKGROUND REFRESH
@@ -639,6 +640,7 @@ class DLStreamsExtractor:
                 "request_headers": playback_headers,
                 "mediaflow_endpoint": self.mediaflow_endpoint,
                 "captured_manifest": captured_manifest,
+                "bypass_warp": True
             }
 
         except Exception as e:
