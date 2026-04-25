@@ -2,9 +2,8 @@ name: Sync Fork
 
 on:
   schedule:
-    - cron: '0 * * * *' # Controlla aggiornamenti ogni ora
-  workflow_dispatch: # Permette di avviarlo a mano con un tasto
-
+    - cron: '0 4 * * *' # Scatta ogni giorno alle 04:00 UTC
+  workflow_dispatch:
 jobs:
   sync:
     runs-on: ubuntu-latest
