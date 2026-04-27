@@ -1,19 +1,1 @@
-name: Sync Fork
 
-on:
-  schedule:
-    - cron: '0 4 * * *' # Scatta ogni giorno alle 04:00 UTC
-  workflow_dispatch:
-jobs:
-  sync:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write # Necessario per scrivere i cambiamenti nel tuo repo
-    steps:
-      - name: Sync upstream changes
-        uses: ahmadnassri/action-upstream-sync@v3
-        with:
-          upstream_repository: realbestia1/EasyProxy
-          upstream_branch: main
-          target_branch: main
-          github_token: ${{ secrets.GITHUB_TOKEN }}
