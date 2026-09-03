@@ -1,0 +1,25 @@
+name: Sync Fork
+
+on:
+  schedule:
+    # Esegue il controllo ogni ora (puoi modificare l'orario tramite cron)
+    - cron: '0 * * * *'
+  # Permette anche l'esecuzione manuale dalla scheda Actions di GitHub
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del tuo fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sincronizzazione automatica con Upstream
+        uses: a22333/git-repo-sync@v1
+        with:
+          upstream_repo: "https://github.com/realbestia1/EasyProxy.git"
+          upstream_branch: "main" # Sostituisci con "master" se il ramo principale si chiama master
+          target_branch: "main"   # Il ramo del tuo fork da aggiornare
+          github_token: ${{ secrets.GITHUB_TOKEN }}
