@@ -2,6 +2,7 @@ import asyncio
 import logging
 import json
 import base64
+import re
 import urllib.parse
 from aiohttp import ClientSession, ClientTimeout
 from typing import Iterator, List, Dict
@@ -112,6 +113,18 @@ class PlaylistBuilder:
                 elif 'vavoo.to' in logical_line:
                     encoded_url = urllib.parse.quote(logical_line, safe='')
                     processed_url_content = f"{base_url}/proxy/manifest.m3u8?url={encoded_url}"
+                elif 'livetv.sx' in logical_line or 'livetv' in logical_line:
+                    encoded_url = urllib.parse.quote(logical_line, safe='')
+                    processed_url_content = f"{base_url}/extractor/video.m3u8?host=livetv&redirect_stream=true&d={encoded_url}"
+                elif re.search(r'sports?onn?line', logical_line, re.IGNORECASE):
+                    # Also match mirror domains with doubled letters (e.g. sportsonnline.click):
+                    # the exact 'sportsonline' substring missed them and they fell through
+                    # to the generic proxy/manifest instead of the extractor.
+                    encoded_url = urllib.parse.quote(logical_line, safe='')
+                    processed_url_content = f"{base_url}/extractor/video.m3u8?host=sportsonline&redirect_stream=true&d={encoded_url}"
+                elif 'fctv33' in logical_line or 'mpgreatestclgczbmiddle' in logical_line:
+                    encoded_url = urllib.parse.quote(logical_line, safe='')
+                    processed_url_content = f"{base_url}/extractor/video.m3u8?host=fctv33&redirect_stream=true&d={encoded_url}"
                 elif '.m3u8' in logical_line:
                     encoded_url = urllib.parse.quote(logical_line, safe='')
                     processed_url_content = f"{base_url}/proxy/manifest.m3u8?url={encoded_url}"
