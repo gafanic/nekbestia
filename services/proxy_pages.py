@@ -136,6 +136,7 @@ class HLSProxyPagesMixin:
         template_path = os.path.join(self._template_cache_dir, filename)
         with open(template_path, "r", encoding="utf-8") as f:
             content = f.read()
+        content = content.replace("{{APP_VERSION}}", APP_VERSION)
         self._template_cache[filename] = content
         return content
 
@@ -361,6 +362,9 @@ class HLSProxyPagesMixin:
                 "/dual/aud/{hid}/audio.m3u8": "Synchronized DUAL audio playlist",
                 "/dual/aud/{hid}/init.mp4": "DUAL audio init segment",
                 "/dual/aud/{hid}/s{idx}.m4s": "DUAL audio segment",
+                "/dual/sub/{sid}/subtitles.m3u8": "DUAL audio-source subtitle playlist shifted onto the audio timeline",
+                "/dual/sub/{sid}/init.mp4": "DUAL subtitle init segment (fMP4 renditions only)",
+                "/dual/sub/{sid}/s{idx}.vtt": "DUAL subtitle segment shifted onto the audio timeline",
             },
             "usage_examples": {
                 "proxy_hls": "/proxy/hls/manifest.m3u8?d=https://example.com/stream.m3u8",
@@ -560,6 +564,38 @@ class HLSProxyPagesMixin:
                         **({"security": security} if requires_password else {}),
                     }
                 },
+                "/dual/sub/{sid}/subtitles.m3u8": {
+                    "get": {
+                        "summary": "Serve shifted audio-source subtitle playlist",
+                        "description": "Returns the subtitle playlist of the audio source with the DUAL offset/rate already applied to its segment timeline.",
+                        "parameters": [
+                            {"name": "sid", "in": "path", "required": True, "schema": {"type": "string"}},
+                            {"name": "o", "in": "query", "schema": {"type": "integer", "default": 0}, "description": "Offset in milliseconds."},
+                            {"name": "r", "in": "query", "schema": {"type": "integer", "default": 1000000000}, "description": "Playback rate in nano-units."},
+                            {"name": "t", "in": "query", "required": True, "schema": {"type": "string"}},
+                        ],
+                        "responses": {"200": {"description": "Subtitle HLS playlist"}, "401": {"description": "Invalid DUAL session"}, "410": {"description": "Subtitle session expired"}},
+                        **({"security": security} if requires_password else {}),
+                    }
+                },
+                "/dual/sub/{sid}/init.mp4": {
+                    "get": {
+                        "summary": "Serve subtitle fragmented MP4 init",
+                        "description": "Returns the initialization fragment when the audio-source subtitles are fMP4 (wvtt) renditions.",
+                        "parameters": [{"name": "sid", "in": "path", "required": True, "schema": {"type": "string"}}, {"name": "t", "in": "query", "required": True, "schema": {"type": "string"}}],
+                        "responses": {"200": {"description": "MP4 initialization fragment"}, "401": {"description": "Invalid DUAL session"}, "410": {"description": "Subtitle session expired"}},
+                        **({"security": security} if requires_password else {}),
+                    }
+                },
+                "/dual/sub/{sid}/s{idx}.vtt": {
+                    "get": {
+                        "summary": "Serve shifted subtitle segment",
+                        "description": "Returns one subtitle segment with cue times mapped to the audio timeline by (t + offset) / rate.",
+                        "parameters": [{"name": "sid", "in": "path", "required": True, "schema": {"type": "string"}}, {"name": "idx", "in": "path", "required": True, "schema": {"type": "integer"}}, {"name": "o", "in": "query", "schema": {"type": "integer"}}, {"name": "r", "in": "query", "schema": {"type": "integer"}}, {"name": "t", "in": "query", "required": True, "schema": {"type": "string"}}],
+                        "responses": {"200": {"description": "Subtitle segment"}, "401": {"description": "Invalid DUAL session"}, "410": {"description": "Subtitle session expired"}},
+                        **({"security": security} if requires_password else {}),
+                    }
+                },
                 "/dual/cache/status": {
                     "post": {
                         "summary": "Check cached DUAL offset",
@@ -646,9 +682,9 @@ class HLSProxyPagesMixin:
                 "/proxy/hls/segment.{format}": {
                     "get": {
                         "summary": "HLS segment compatibility",
-                        "description": "Serve HLS segments (ts, m4s, mp4, vtt) through the proxy with proper headers.",
+                        "description": "Serve HLS segments (ts, m4s, mp4, vtt, aac, mp3, m4a, ac3, ec3) through the proxy with proper headers.",
                         "parameters": [
-                            {"name": "format", "in": "path", "schema": {"type": "string", "enum": ["ts", "m4s", "mp4", "vtt"]}, "required": True},
+                            {"name": "format", "in": "path", "schema": {"type": "string", "enum": ["ts", "m4s", "mp4", "vtt", "aac", "mp3", "m4a", "ac3", "ec3"]}, "required": True},
                         ],
                         "responses": {"200": {"description": "Segment data"}},
                     }
@@ -889,7 +925,7 @@ class HLSProxyPagesMixin:
                             "required": True,
                             "content": {
                                 "multipart/form-data": {
-                                    "schema": {"type": "object", "properties": {"file": {"type": "string", "format": "binary"}}},
+                                    "schema": {"type": "object", "properties": {"config": {"type": "string", "format": "binary"}}},
                                 }
                             },
                         },
@@ -1165,8 +1201,9 @@ class HLSProxyPagesMixin:
                     )
 
                 # Aggiungi password se necessaria
-                if API_PASSWORD:
-                    params.append(f"api_password={API_PASSWORD}")
+                effective_pw = req_password or API_PASSWORD
+                if effective_pw:
+                    params.append(f"api_password={urllib.parse.quote(str(effective_pw), safe='')}")
 
                 # Aggiungi bypass warp se richiesto
                 if bypass_warp:
@@ -1179,6 +1216,9 @@ class HLSProxyPagesMixin:
                     params.append(
                         f"proxy={urllib.parse.quote(proxy_route, safe='')}"
                     )
+
+                if str(item.get("disable_ssl") or "").lower() in ("1", "true", "yes"):
+                    params.append("disable_ssl=1")
 
                 # Costruisci URL finale
                 query_string = "&".join(params)
@@ -1197,35 +1237,25 @@ class HLSProxyPagesMixin:
             return web.Response(text=str(e), status=500)
 
     async def handle_proxy_ip(self, request):
-        """Restituisce l'indirizzo IP pubblico del server (o del proxy se configurato)."""
+        """Restituisce l'indirizzo IP pubblico reale del server (connessione diretta)."""
         if not check_password(request):
             return web.Response(status=401, text="Unauthorized: Invalid API Password")
 
+        target_url = "https://api.ipify.org?format=json"
         try:
-            # Usa un proxy globale se configurato, altrimenti connessione diretta
-            proxy = random.choice(_shared.GLOBAL_PROXIES) if _shared.GLOBAL_PROXIES else None
-
-            # Crea una sessione dedicata con il proxy configurato
-            if proxy:
-                logger.info(f"[NET] Checking IP via proxy: {proxy}")
-                connector = get_connector_for_proxy(proxy)
-            else:
-                connector = TCPConnector()
-
             timeout = ClientTimeout(total=10)
-            async with ClientSession(timeout=timeout, connector=connector) as session:
-                # Usa un servizio esterno per determinare l'IP pubblico
-                async with session.get("https://api.ipify.org?format=json") as resp:
+            async with ClientSession(timeout=timeout, connector=TCPConnector()) as session:
+                async with session.get(target_url) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         return web.json_response(data)
-                    else:
-                        logger.error(f"❌ Failed to fetch IP: {resp.status}")
-                        return web.Response(text="Failed to fetch IP", status=502)
+                    logger.error(f"❌ Failed to fetch IP: HTTP {resp.status}")
+                    return web.Response(text=f"Failed to fetch IP (HTTP {resp.status})", status=502)
 
         except Exception as e:
-            logger.error(f"❌ Error fetching IP: {e}")
-            return web.Response(text=str(e), status=500)
+            err_msg = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
+            logger.error(f"❌ Error fetching IP: {err_msg}")
+            return web.Response(text=err_msg, status=500)
 
     async def handle_admin(self, request):
         if not check_password(request):
@@ -1245,15 +1275,19 @@ class HLSProxyPagesMixin:
         return web.Response(text=html, content_type="text/html")
 
     async def handle_admin_api_login(self, request):
+        import hmac
         try:
             data = await request.json()
         except Exception:
             return web.json_response({"error": "Invalid JSON"}, status=400)
-        password = data.get("password", "")
-        if API_PASSWORD and password != API_PASSWORD:
+        if not isinstance(data, dict):
+            return web.json_response({"error": "Invalid payload"}, status=400)
+        password = str(data.get("password") or "")
+        if API_PASSWORD and not hmac.compare_digest(password.encode(), API_PASSWORD.encode()):
             return web.json_response({"error": "Invalid password"}, status=401)
         resp = web.json_response({"ok": True})
-        resp.set_cookie("admin_token", API_PASSWORD, httponly=True, samesite="lax", max_age=86400 * 30, path="/")
+        if API_PASSWORD:
+            resp.set_cookie("admin_token", API_PASSWORD, httponly=True, samesite="lax", max_age=86400 * 30, path="/")
         return resp
 
     async def handle_admin_logout(self, request):

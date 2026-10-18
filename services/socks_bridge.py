@@ -47,6 +47,9 @@ async def _pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
 
 def _create_client_handler(upstream_socks_url: str):
     async def handle_client(client_reader: asyncio.StreamReader, client_writer: asyncio.StreamWriter):
+        # Bound before the try: the finally block closes it even when the
+        # client disconnects before the upstream socket is created.
+        up_writer = None
         try:
             req_line = await client_reader.readline()
             if not req_line:
@@ -70,10 +73,11 @@ def _create_client_handler(upstream_socks_url: str):
 
             if method == "CONNECT":
                 if ":" in target:
-                    host, port_str = target.split(":", 1)
+                    host, _, port_str = target.rpartition(":")
+                    host = host.strip("[]")
                     port = int(port_str)
                 else:
-                    host, port = target, 443
+                    host, port = target.strip("[]"), 443
 
                 proxy = Proxy.from_url(upstream_socks_url)
                 upstream_sock = await proxy.connect(dest_host=host, dest_port=port)
@@ -118,6 +122,11 @@ def _create_client_handler(upstream_socks_url: str):
             except Exception:
                 pass
         finally:
+            if up_writer is not None:
+                try:
+                    up_writer.close()
+                except Exception:
+                    pass
             try:
                 client_writer.close()
             except Exception:
