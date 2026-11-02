@@ -22,6 +22,6 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
       - name: Deploy a pietrobestia
-        run: flyctl deploy --app pietrobestia --remote-only
+        run: flyctl deploy --app pietrobestia --remote-only --yes
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_PIETRO }}
